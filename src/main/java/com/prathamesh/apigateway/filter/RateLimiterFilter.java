@@ -1,5 +1,6 @@
 package com.prathamesh.apigateway.filter;
 
+import com.prathamesh.apigateway.config.RouteConfig;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,6 +25,8 @@ public class RateLimiterFilter extends OncePerRequestFilter {
     private RedisTemplate<String,String> redisTemplate;
     @Autowired
     private RestTemplate restTemplate;
+    @Autowired
+    private RouteConfig routeConfig;
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         String ip = request.getRemoteAddr();
@@ -37,11 +40,21 @@ public class RateLimiterFilter extends OncePerRequestFilter {
         }
         redisTemplate.opsForZSet().add(key,String.valueOf(now),now);
         redisTemplate.expire(key,windowSize, TimeUnit.MILLISECONDS);
-        String result = restTemplate.getForObject("https://jsonplaceholder.typicode.com/posts",String.class);
-        response.setContentType("application/json");
-        if(result != null)
-            response.getWriter().write(result);
-        else
-            response.setStatus(502);
+        String uri = request.getRequestURI();
+        String routeKey = uri.substring(uri.lastIndexOf("/")+1);
+
+        String downStreamUrl = routeConfig.getRoutes().get(routeKey);
+
+        if(downStreamUrl==null){
+            response.setStatus(404);
+            return;
+        }else{
+            String result = restTemplate.getForObject(downStreamUrl,String.class);
+            response.setContentType("application/json");
+            if(result!=null)
+                response.getWriter().write(result);
+            else
+                response.setStatus(502);
+        }
     }
 }
